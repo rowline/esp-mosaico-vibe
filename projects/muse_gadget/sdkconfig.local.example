@@ -1,0 +1,8 @@
+# Copy to sdkconfig.local (git-ignored) for settings that belong to one
+# network. Changes take effect after deleting build/sdkconfig.
+#
+# Send the board's internet traffic through another host on the LAN, such as
+# a computer that forwards and proxies it. DHCP still assigns the address.
+# Use a DNS server outside the LAN so lookups also pass through that host.
+CONFIG_HOMEHUB_UPLINK_GATEWAY="192.168.1.10"
+CONFIG_HOMEHUB_UPLINK_DNS="223.5.5.5"

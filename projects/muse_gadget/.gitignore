@@ -1,0 +1,2 @@
+# Settings for one particular network (see sdkconfig.local.example).
+sdkconfig.local

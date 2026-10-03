@@ -1,0 +1,12 @@
+# Name,    Type, SubType, Offset,   Size,     Flags
+# 0x0-0x200000 is the retained Vibe Mode layout (esp-mosaico-recovery
+# product_contract.json). Do not move or resize these entries.
+otadata,   data, ota,     0x9000,   0x2000,
+phy_init,  data, phy,     0xb000,   0x1000,
+sysmeta,   data, nvs,     0xc000,   0x14000,
+factory,   app,  factory, 0x20000,  0x1c0000,
+coredump,  data, coredump,0x1e0000, 0x20000,
+# Application region. nvs holds Muse settings, Wi-Fi, BLE bonds and device
+# tokens (Muse's own tables reserve 0xC000).
+nvs,       data, nvs,     0x200000, 0x10000,
+ota_0,     app,  ota_0,   0x210000, 0xdf0000,
