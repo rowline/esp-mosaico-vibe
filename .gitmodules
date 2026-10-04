@@ -7,3 +7,7 @@
 [submodule "submodule/raylib-lite-engine"]
 	path = submodule/raylib-lite-engine
 	url = https://github.com/espressif2022/raylib-lite-engine.git
+[submodule "projects/muse-gadget-sdk"]
+	path = projects/muse-gadget-sdk
+	url = https://github.com/rowline/muse-gadget-sdk.git
+	branch = esp-mosaico

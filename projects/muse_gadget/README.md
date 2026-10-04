@@ -9,10 +9,10 @@ left slot serves Muse's `camera.capture` (`components/mosaico_camera`). An
 Interaction module in either slot greets whoever walks up
 (`components/mosaico_presence`).
 
-The SDK checkout is not part of this repository. Clone
-https://github.com/facebookincubator/muse-gadget-sdk to
-`projects/muse-gadget-sdk` and check out the `esp-mosaico` branch, which for
-now exists only in a local checkout.
+The SDK is the submodule `projects/muse-gadget-sdk`: the `esp-mosaico` branch
+of https://github.com/rowline/muse-gadget-sdk, a fork of
+https://github.com/facebookincubator/muse-gadget-sdk. Fetch it with
+`git submodule update --init projects/muse-gadget-sdk`.
 
 ## Build and install
 
