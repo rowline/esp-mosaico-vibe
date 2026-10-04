@@ -1,0 +1,4 @@
+{
+  "schema": "mosaico-game-sim/v1",
+  "sources": ["main/game_module.c", "main/game.c", "main/game_view.c"]
+}
