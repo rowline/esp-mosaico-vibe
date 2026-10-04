@@ -1,0 +1,4 @@
+dependencies:
+  idf: ">=6.2"
+  # 2.5.3: the newest on the China mirror; nothing for TTS changed up to 2.5.5.
+  espressif/esp-sr: "2.5.3"

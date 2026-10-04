@@ -3,8 +3,9 @@
 Meta's Muse Gadget SDK firmware (`../muse-gadget-sdk/esp32`, branch
 `esp-mosaico`) built as an ESP-Mosaico application. Vibe Mode stays in the first
 2 MB, so the gadget installs and updates through `mosaico.py` like any other app.
-This stage has no screen or audio: status shows in the log, and the AI key is
-the Muse button.
+Muse's screen UI runs on the 480 px AMOLED (`components/mosaico_board`), the AI
+key is the talk button and BOOT the menu button, and a camera module in the
+left slot serves Muse's `camera.capture` (`components/mosaico_camera`).
 
 The SDK checkout is not part of this repository. Clone
 https://github.com/facebookincubator/muse-gadget-sdk to
@@ -20,6 +21,10 @@ python3 submodule/esp-mosaico-utils/mosaico-tools/skills/idf-low-noise-build/scr
 python3 mosaico.py iris system-update --project projects/muse_gadget
 python3 mosaico.py iris logs --project projects/muse_gadget --timeout 20
 ```
+
+`system-update` is needed when the partition table changes; otherwise
+`python3 mosaico.py iris app-update --project projects/muse_gadget` replaces
+only the app and keeps Muse's pairing and Wi-Fi.
 
 Never use `idf.py flash`: it replaces the retained bootloader and partition
 table. `system_update.cmake` blocks those targets.
@@ -40,6 +45,36 @@ Clash Verge in TUN mode with `dns-hijack: any:53`, the Mac also needs
 `sudo sysctl -w net.inet.ip.forwarding=1`, which resets on reboot, and a fixed
 address in the router. Once the board joins Wi-Fi, the log shows
 `link.uplink: internet via <gateway>`.
+
+## Chinese captions
+
+Muse's caption font, unscii, is ASCII only. Captions and replies fall back to
+`components/mosaico_board/fonts/cjk_16.bin`: GB2312's 6763 hanzi and its
+punctuation from Source Han Sans CN at 16 px (SIL Open Font License,
+`fonts/OFL.txt`), about 0.9 MB in the image and loaded into PSRAM when the UI
+starts. `fonts/make_cjk_font.py` rebuilds it. To preview in the SDK's
+simulator, build it with `-DMUSE_SIM_BOARD=esp_mosaico` and run it with
+`MUSE_SIM_WIDE_FONT` set to that file.
+
+## Voice
+
+With the speaker on, replies are said by esp-sr's offline Chinese TTS
+(`components/mosaico_tts`, Xiaole voice) and the captions follow the speech;
+with it off, they're shown at reading pace as upstream. The 2.9 MB voice sits
+in its own `voice_data` partition, which System Update writes from esp-sr's
+`esp_tts_voice_data_xiaole.dat`; app-update leaves it in place. esp-sr reads
+Chinese only, so markdown, emoji and links are dropped, acronyms are spelled
+the Chinese way ("AI" as 诶艾) and other English words are skipped; a reply
+with no Chinese in it is shown, not said.
+
+## Camera
+
+The module's sensor (OV3640 or SC101IOT) streams YUV422; a capture takes one
+frame after auto-exposure settles, encodes it as JPEG turned upright (720 x 1280
+from the SC101IOT) and shows it on the screen for 4 s. The sensor is powered
+only during a capture. The camera's data and flash pins share the USB
+Serial/JTAG pads, so that port is off and Muse's serial tools use the UART
+console.
 
 ## Pairing
 

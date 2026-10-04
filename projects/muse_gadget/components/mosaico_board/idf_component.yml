@@ -1,0 +1,7 @@
+dependencies:
+  idf: ">=6.2"
+  esp-mosaico-bsp:
+    version: "*"
+    override_path: ../../../../submodule/esp-mosaico-bsp/components/esp-mosaico-bsp
+  # The version Muse's band flush is built and tested against.
+  espressif/esp_lvgl_adapter: "0.6.4"

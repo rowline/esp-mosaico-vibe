@@ -9,4 +9,7 @@ coredump,  data, coredump,0x1e0000, 0x20000,
 # Application region. nvs holds Muse settings, Wi-Fi, BLE bonds and device
 # tokens (Muse's own tables reserve 0xC000).
 nvs,       data, nvs,     0x200000, 0x10000,
-ota_0,     app,  ota_0,   0x210000, 0xdf0000,
+ota_0,     app,  ota_0,   0x210000, 0xaf0000,
+# esp-sr's Xiaole voice (2.9 MB) for spoken replies (components/mosaico_tts),
+# written by System Update.
+voice_data,data, undefined,0xd00000, 0x300000,

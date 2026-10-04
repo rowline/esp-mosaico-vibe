@@ -15,6 +15,7 @@ if(NOT SDKCONFIG_DEFAULTS)
     set(SDKCONFIG_DEFAULTS
         "${MUSE_SDK_ROOT}/sdkconfig.defaults"
         "${MUSE_SDK_ROOT}/devices/sdkconfig.esp-mosaico"
+        "${MUSE_SDK_ROOT}/devices/sdkconfig.muse"
         "${CMAKE_CURRENT_LIST_DIR}/sdkconfig.mosaico")
     # Optional settings for one particular network, such as a gateway override.
     if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/sdkconfig.local")
@@ -32,6 +33,7 @@ if(EXISTS "${MUSE_SDK_TOKEN_FILE}")
     string(STRIP "${muse_sdk_token}" muse_sdk_token)
     file(WRITE "${CMAKE_BINARY_DIR}/sdkconfig.token"
         "CONFIG_GADGET_SDK_TOKEN=\"${muse_sdk_token}\"\n")
+    file(CHMOD "${CMAKE_BINARY_DIR}/sdkconfig.token" PERMISSIONS OWNER_READ OWNER_WRITE)
     unset(muse_sdk_token)
     list(APPEND SDKCONFIG_DEFAULTS "${CMAKE_BINARY_DIR}/sdkconfig.token")
 endif()
