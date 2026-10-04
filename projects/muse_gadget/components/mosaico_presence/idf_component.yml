@@ -1,0 +1,5 @@
+dependencies:
+  idf: ">=6.2"
+  mosaico_module_interact:
+    version: "*"
+    override_path: ../../../../submodule/esp-mosaico-bsp/components/mosaico_module_interact

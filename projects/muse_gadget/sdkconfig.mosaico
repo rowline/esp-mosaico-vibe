@@ -58,6 +58,10 @@ CONFIG_CAMERA_OV3640_DVP_DEFAULT_FMT_YUV422_UYVY_1024X768_25FPS=y
 # CONFIG_USJ_ENABLE_USB_SERIAL_JTAG is not set
 CONFIG_MUSE_CONSOLE_UART=y
 
+# Interaction module in either slot (components/mosaico_presence): someone
+# walking up lights its LEDs, wakes the screen and gets greeted by name.
+CONFIG_MOSAICO_PRESENCE_NAME="Rollin"
+
 # Muse on Vibe Mode: Vibe Mode writes and accepts images, so Muse's own OTA
 # and its 5-minute rollback guard stay off.
 CONFIG_HOMEHUB_OTA_ENABLED=n

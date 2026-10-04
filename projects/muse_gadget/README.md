@@ -5,7 +5,9 @@ Meta's Muse Gadget SDK firmware (`../muse-gadget-sdk/esp32`, branch
 2 MB, so the gadget installs and updates through `mosaico.py` like any other app.
 Muse's screen UI runs on the 480 px AMOLED (`components/mosaico_board`), the AI
 key is the talk button and BOOT the menu button, and a camera module in the
-left slot serves Muse's `camera.capture` (`components/mosaico_camera`).
+left slot serves Muse's `camera.capture` (`components/mosaico_camera`). An
+Interaction module in either slot greets whoever walks up
+(`components/mosaico_presence`).
 
 The SDK checkout is not part of this repository. Clone
 https://github.com/facebookincubator/muse-gadget-sdk to
@@ -75,6 +77,30 @@ from the SC101IOT) and shows it on the screen for 4 s. The sensor is powered
 only during a capture. The camera's data and flash pins share the USB
 Serial/JTAG pads, so that port is off and Muse's serial tools use the UART
 console.
+
+## Presence greeting
+
+With an Interaction module in either slot, `components/mosaico_presence`
+watches its PIR sensor:
+
+- Motion after a minute without any turns the screen on and lights the
+  module's six LEDs warm white for 6 s.
+- If nobody was seen for 10 minutes before that, Muse also greets during those
+  6 s: the happy animation, a chirp and a caption for the time of day, such as
+  `晚上好，Rollin！`. The caption goes out with the lights.
+- Further motion keeps the screen from auto-sleeping but neither turns it on
+  nor relights the LEDs, so a screen turned off with BOOT stays off until the
+  room has been empty for a minute.
+- After a minute without motion, the next motion counts as a new arrival;
+  Muse's own auto-sleep turns the screen off.
+
+The name, time zone and NTP server are the `CONFIG_MOSAICO_PRESENCE_*`
+options; the name is set in `sdkconfig.mosaico`. Muse doesn't set the clock,
+so the component starts SNTP once Wi-Fi is up; until then the greeting is
+`你好，Rollin！`. A module plugged in while Muse runs is found within seconds;
+one pulled out stops working until the next restart. PIR sees movement, not
+someone sitting still, so sitting motionless for a minute and then moving
+counts as arriving again.
 
 ## Pairing
 

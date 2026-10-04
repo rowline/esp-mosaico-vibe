@@ -7,6 +7,7 @@
 #include "iris_ota_support.h"
 #include "muse_tts.h"
 #include "tts_mosaico.h"
+#include "mosaico_presence.h"
 
 /* Strong definition of the hook Muse's app_main calls before Wi-Fi, BLE and
  * the UI start. ESP-Iris keeps its own state in the retained sysmeta NVS
@@ -24,4 +25,6 @@ void muse_gadget_platform_start(void)
     /* esp-sr's voice for replies: mapped here, on the main task's internal
      * stack; it loads with the first reply it says. */
     muse_tts_register(tts_mosaico_start());
+    /* Waits for Muse's UI and an Interaction module in its own task. */
+    ESP_ERROR_CHECK_WITHOUT_ABORT(mosaico_presence_start());
 }

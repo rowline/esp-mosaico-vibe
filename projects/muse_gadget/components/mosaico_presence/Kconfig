@@ -1,0 +1,24 @@
+menu "Presence greeting"
+
+    config MOSAICO_PRESENCE_NAME
+        string "Name in the greeting"
+        default ""
+        help
+            Who the greeting addresses, as in "晚上好，<name>！". Leave it
+            empty for a greeting without a name.
+
+    config MOSAICO_PRESENCE_TZ
+        string "Time zone (POSIX TZ)"
+        default "CST-8"
+        help
+            Picks the greeting for the time of day. CST-8 is China Standard
+            Time (UTC+8).
+
+    config MOSAICO_PRESENCE_NTP_SERVER
+        string "NTP server"
+        default "ntp.aliyun.com"
+        help
+            Sets the clock once Wi-Fi is up. Until then the greeting leaves
+            out the time of day.
+
+endmenu
