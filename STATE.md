@@ -2,6 +2,16 @@
 
 按日期倒序。拍板与推翻只追加，不改写。
 
+## 2026-10-04 夜 muse_gadget：语速调快、USB 链路卡死
+
+拍板（Rollin）：
+
+- 语速 3 档偏慢，改成 4 档（`tts_mosaico.c` 的 `SPEED`）。22:12 用 app-update 装上，等 Rollin 试听确认后再提交推送。esp-sr 解析器只报警告的改动也在这一版里。
+
+悬着的事：
+
+- ESP-Iris 的 USB 链路在板子运行约 3.5 小时后卡死：app-update 两次报 `HELLO did not validate the selected identity before the deadline`。当时 Mac 上仍能看到 USB 设备，也没有进程占着串口，屏幕可以正常唤醒。拔插 USB 线后恢复。原因还没查到，可能跟 Mac 睡眠或 USB 挂起有关，固件里 `CONFIG_TINYUSB_SUSPEND_CALLBACK` 没开。再出现时先拔插 USB 线；不行就按 ON/OFF 重启，或者按住 AI 开机进 Vibe Mode。
+
 ## 2026-10-04 晚 发布到 GitHub（Rollin 定：公开 fork）
 
 - 工作区：https://github.com/rowline/esp-mosaico-vibe ，分支 `muse-gadget`（fork 自 esp-mosaico/esp-mosaico-vibe）。push 用 remote `rowline`；`origin` 仍指向上游，只读。

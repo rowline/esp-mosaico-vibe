@@ -30,7 +30,7 @@
 
 static const char *TAG = "tts";
 
-#define SPEED 3                 /* esp-sr's 0 (slowest) to 5 */
+#define SPEED 4                 /* esp-sr's 0 (slowest) to 5; 3 sounded slow */
 #define SAY_MAX 4096            /* a message cut down, letters spelled out */
 #define SENTENCE_MAX 80         /* characters said in one go */
 #define SENTENCE_SPLIT 40       /* past this, a comma ends one */
