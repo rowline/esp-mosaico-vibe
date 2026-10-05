@@ -2,6 +2,24 @@
 
 按日期倒序。拍板与推翻只追加，不改写。
 
+## 2026-10-05 傍晚 muse_gadget：新命令上板；USB 卡死暂不查
+
+上板验证（板上跑的是工作树全量编译的版本，内容和已推送的一致，只是测试入口开着）：
+
+- `voice.say` 能用：13:58 Muse 用板子的声音说了「你好」，走的是 Mac 语音，0.6 秒说完。
+- 第一次让它「用 gadget 说一句你好」，Muse 回答「小设备没有扬声器」，改用 `display.draw_url` 下载了一张图显示。估计是记着昨天还没有这条命令时的结论。新开对话或者明说「用 voice.say」之后就正常了。
+- `lights.set` 被 Muse 调用了好几次，开灯、关灯都成功。
+
+拍板（Rollin）：USB 卡死先不查，只做记录。
+
+USB 卡死目前知道的（都还没验证）：
+
+- 今天出现了 3 次：13:07（开机 21 分钟）、13:38（开机 3.5 分钟），以及昨晚 22:18。每次都是 ESP-Iris 不再应答，板子本身照常运行，没有重启；拔插后 Iris 重装 TinyUSB 才恢复。13:07 那次拔插后连 USB 设备都没出现，要按住 AI 键开机进 Vibe Mode。
+- 线索 1：`link.image` 的日志显示，开机以来片内 DMA 内存最低到过 0（`dma … min=0K`）。如果 TinyUSB 或 Iris 某一刻申请不到 DMA 内存，USB 通道就可能卡死。
+- 线索 2：两次卡死前不久，交互模块都检测到「有人走近」（亮灯、唤醒屏幕），分别隔了 1.5 秒和 24 秒。关联不强。
+- 想好的下一步：用 `heap_caps_register_failed_alloc_callback` 记录每次内存申请失败（大小、类型、函数名），再把 DMA 内存历史最低值的每次刷新记进日志，等下次卡死时对照。
+- 停掉的东西：后台抓日志已经停了。要继续查时，日志从 `.codex-runs/mosaico/*-monitor/raw.log` 里读，那里每行一条 JSON；`iris logs` 的终端输出会中途停止打印，不可靠。
+
 ## 2026-10-05 下午 让 Muse 主动调用板子：已提交，未上板
 
 - 默认分支已改（Rollin 定）：rowline/esp-mosaico-vibe → `muse-gadget`，rowline/muse-gadget-sdk → `esp-mosaico`。
