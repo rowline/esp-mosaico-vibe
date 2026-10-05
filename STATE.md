@@ -2,6 +2,13 @@
 
 按日期倒序。拍板与推翻只追加，不改写。
 
+## 2026-10-05 下午 让 Muse 主动调用板子：已提交，未上板
+
+- 默认分支已改（Rollin 定）：rowline/esp-mosaico-vibe → `muse-gadget`，rowline/muse-gadget-sdk → `esp-mosaico`。
+- 10-04 23:11–23:17 写下、一直没提交的那批改动，Rollin 让全部提交，写的人是谁没查清：SDK 7bc0f5e（`voice.say`、`voice.configure`、`display.show_text`、`display.configure`，`gadget_platform.h` 钩子），工作区 ed40da6（交互模块的 `presence.read`、`lights.set`、`ir.send_nec`）。
+- 已验证：整个工作区固件编译通过（0 编译警告）；SDK 主机测试 157 项通过、2 项因环境跳过；六条指令都在固件里。
+- 未验证：这些指令还没在板子上让 Muse 真正调用过。下次装机后，让 Muse 说一句话、点一次灯、读一次有没有人，看日志里的指令请求和返回结果。
+
 ## 2026-10-05 下午 muse_gadget：PSRAM 崩溃的解法是不从 PSRAM 执行代码；字幕去 Markdown
 
 拍板（Rollin）：不退回只用板上 esp-sr 的稳定版，就在 Mac 语音方案上把问题解决。关 PMP 内存保护的实验被权限拦下，没有做，也不再追。
