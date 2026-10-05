@@ -114,6 +114,41 @@ one pulled out stops working until the next restart. PIR sees movement, not
 someone sitting still, so sitting motionless for a minute and then moving
 counts as arriving again.
 
+## What Muse can do with the gadget
+
+Muse talks to the gadget over Home Link, Meta's protocol, not MCP: when the
+gadget connects it registers a list of commands (`link.register`,
+`commands_v2`), each with a description and parameters, and Muse invokes them
+as it sees fit. Upstream Muse registers `device.health`, `device.discover`,
+`display.draw_url`, `display.show_animation` and, with a camera,
+`camera.capture`. This build adds, for Muse builds in the SDK's `muse_glue.c`:
+
+| Command | What it does |
+| --- | --- |
+| `voice.say` | Says text in the board's voice, captions following the speech; with the speaker off, shows it at reading pace. A talk press cuts it short. Answers once said. |
+| `voice.configure` | Volume and speaker on/off (upstream has it only with Link's own voice). |
+| `display.show_text` | Shows one page of text as the caption, without speaking. |
+| `display.configure` | Brightness, auto-sleep time, and screen on/off now. |
+
+and, for this board's Interaction module, in
+`components/mosaico_platform/mosaico_commands.c` through the SDK's weak
+`muse_gadget_platform_add_commands()` and `muse_gadget_platform_command()`
+hooks (`main/gadget_platform.h`):
+
+| Command | What it does |
+| --- | --- |
+| `presence.read` | Whether someone is there (motion in the last minute), seconds since the last motion, ambient light 0-100. |
+| `lights.set` | The six LEDs one colour (`#rrggbb` or `off`), optionally for a number of seconds. The arrival welcome leaves a colour set this way alone. |
+| `ir.send_nec` | One NEC infrared code (address and command bytes) from the module's IR LED. |
+
+Replies to voice notes are spoken on the board whether or not Muse calls
+`voice.say`; the command is for speaking up unprompted. The `voice.say`
+description tells Muse which languages the voice reads (Chinese; English too
+while the speech server is reachable). The module's commands are advertised
+whether or not a module is plugged in and fail with `no_module` without one.
+The presence task owns the module: commands hand it a request that it serves
+on its next 200 ms poll.
+
 ## Pairing
 
 1. Join the Mac's hotspot from the phone (2.4 GHz; ESP32-S31 has no 5 GHz).

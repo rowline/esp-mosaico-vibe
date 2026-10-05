@@ -1,5 +1,6 @@
 dependencies:
   idf: ">=6.2"
+  espressif/cjson: "~1.7"
   esp_iris:
     version: "*"
     override_path: ../../../../submodule/esp-mosaico-utils/ESP-Iris/components/esp_iris

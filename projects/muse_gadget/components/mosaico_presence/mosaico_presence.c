@@ -16,6 +16,11 @@
  * its boot animation, then claims the module, waiting while none is plugged
  * in. Pulling the module out while it runs isn't noticed: its LEDs and PIR
  * just stop until the next restart.
+ *
+ * Home Link's commands (mosaico_platform) read the state through
+ * mosaico_presence_status() and hand the task one request at a time, for the
+ * LEDs or the IR LED, which it serves on its next poll: a colour Muse sets
+ * stays until its time is up or it's changed, and the welcome leaves it be.
  */
 #include "mosaico_presence.h"
 
@@ -28,6 +33,7 @@
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/idf_additions.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "mosaico_module_interact.h"
 #include "muse_state.h"
@@ -52,21 +58,46 @@ static const char *TAG = "presence";
 #define FADE_STEP_MS 20
 #define LED_BRIGHTNESS 96           /* the driver's scale for every colour, of 255 */
 #define LEVEL_FULL 255
+#define REQUEST_WAIT_MS 1500        /* a requester's wait for the task: several polls */
 
 static const mosaico_interact_rgb_t WARM_WHITE = { 255, 150, 60 };
+
+typedef enum {
+    REQUEST_NONE,
+    REQUEST_LIGHTS,
+    REQUEST_IR,
+} request_kind_t;
+
+/* One command's request to the task, and its answer. */
+typedef struct {
+    request_kind_t kind;
+    mosaico_interact_rgb_t colour;
+    uint32_t ms;
+    uint8_t address, command;
+    esp_err_t result;
+} request_t;
 
 typedef struct {
     mosaico_interact_handle_t module;
     bool present;
     int64_t last_motion_us;         /* 0: nobody seen since boot */
+    int light;                      /* the module's last light level; -1 before the first read */
     int64_t welcome_until_us;       /* 0: lights off */
     bool greeting;                  /* the greeting caption is up */
     uint32_t greeting_version;      /* caption version the greeting set */
     char before[MUSE_CAPTION_MAX];  /* caption the greeting covered */
+    bool lit;                       /* a colour Muse set is on */
+    int64_t lit_until_us;           /* 0: until changed */
+    request_t request;
 } presence_t;
 
 /* In PSRAM, like the task's stack: internal RAM is short with Muse running. */
 EXT_RAM_BSS_ATTR static presence_t s_presence;
+
+/* Guards the fields the commands read or write from their own tasks. */
+static portMUX_TYPE s_lock = portMUX_INITIALIZER_UNLOCKED;
+static SemaphoreHandle_t s_request_lock;   /* one requester at a time */
+static SemaphoreHandle_t s_request_done;
 
 static int64_t ms_to_us(int64_t ms)
 {
@@ -103,6 +134,96 @@ static mosaico_interact_handle_t open_module(void)
             ESP_LOGI(TAG, "waiting for an Interaction module in either slot");
             told = true;
         }
+    }
+}
+
+void mosaico_presence_status(mosaico_presence_status_t *out)
+{
+    portENTER_CRITICAL(&s_lock);
+    out->module = s_presence.module != NULL;
+    out->someone = s_presence.present;
+    out->last_motion_us = s_presence.last_motion_us;
+    out->light = s_presence.light;
+    portEXIT_CRITICAL(&s_lock);
+}
+
+/* Hands the task one request and waits for its answer. */
+static esp_err_t request(const request_t *req)
+{
+    if (!s_request_lock || xSemaphoreTake(s_request_lock, pdMS_TO_TICKS(REQUEST_WAIT_MS)) != pdTRUE) {
+        return ESP_ERR_TIMEOUT;
+    }
+    esp_err_t err;
+    if (!s_presence.module) {
+        err = ESP_ERR_INVALID_STATE;
+    } else {
+        xSemaphoreTake(s_request_done, 0);   /* no stale answer */
+        portENTER_CRITICAL(&s_lock);
+        s_presence.request = *req;
+        portEXIT_CRITICAL(&s_lock);
+        if (xSemaphoreTake(s_request_done, pdMS_TO_TICKS(REQUEST_WAIT_MS)) == pdTRUE) {
+            err = s_presence.request.result;
+        } else {
+            portENTER_CRITICAL(&s_lock);
+            s_presence.request.kind = REQUEST_NONE;   /* withdrawn */
+            portEXIT_CRITICAL(&s_lock);
+            err = ESP_ERR_TIMEOUT;
+        }
+    }
+    xSemaphoreGive(s_request_lock);
+    return err;
+}
+
+esp_err_t mosaico_presence_lights(uint8_t r, uint8_t g, uint8_t b, uint32_t ms)
+{
+    request_t req = { .kind = REQUEST_LIGHTS, .colour = { r, g, b }, .ms = ms };
+    return request(&req);
+}
+
+esp_err_t mosaico_presence_ir_send_nec(uint8_t address, uint8_t command)
+{
+    request_t req = { .kind = REQUEST_IR, .address = address, .command = command };
+    return request(&req);
+}
+
+/* On the task: the request waiting, if any. */
+static void serve_request(void)
+{
+    portENTER_CRITICAL(&s_lock);
+    request_t req = s_presence.request;
+    portEXIT_CRITICAL(&s_lock);
+    if (req.kind == REQUEST_NONE) {
+        return;
+    }
+    esp_err_t err = ESP_OK;
+    if (req.kind == REQUEST_LIGHTS) {
+        bool on = req.colour.r || req.colour.g || req.colour.b;
+        err = on ? mosaico_interact_led_fill(s_presence.module, req.colour)
+                 : mosaico_interact_led_clear(s_presence.module);
+        if (err == ESP_OK) {
+            s_presence.lit = on;
+            s_presence.lit_until_us = on && req.ms ? esp_timer_get_time() + ms_to_us(req.ms) : 0;
+            ESP_LOGI(TAG, "lights %s%s", on ? "on" : "off", on && req.ms ? " for a while" : "");
+        }
+    } else if (req.kind == REQUEST_IR) {
+        err = mosaico_interact_ir_send_nec(s_presence.module, req.address, req.command);
+        ESP_LOGI(TAG, "IR NEC %02x/%02x: %s", req.address, req.command, esp_err_to_name(err));
+    }
+    portENTER_CRITICAL(&s_lock);
+    s_presence.request.result = err;
+    s_presence.request.kind = REQUEST_NONE;
+    portEXIT_CRITICAL(&s_lock);
+    xSemaphoreGive(s_request_done);
+}
+
+/* On the task: a colour Muse set for a while goes out when its time is up. */
+static void end_lit(int64_t now)
+{
+    if (s_presence.lit && s_presence.lit_until_us && now >= s_presence.lit_until_us) {
+        s_presence.lit = false;
+        s_presence.lit_until_us = 0;
+        (void)mosaico_interact_led_clear(s_presence.module);
+        ESP_LOGI(TAG, "lights off: time's up");
     }
 }
 
@@ -170,17 +291,23 @@ static void end_welcome(void)
             muse_state_set_caption("%s", s_presence.before);
         }
     }
-    fade(LEVEL_FULL, 0, FADE_OUT_MS);
-    (void)mosaico_interact_led_clear(s_presence.module);
+    if (!s_presence.lit) {
+        fade(LEVEL_FULL, 0, FADE_OUT_MS);
+        (void)mosaico_interact_led_clear(s_presence.module);
+    }
 }
 
 static void arrive(int64_t now)
 {
     bool greeting = !s_presence.last_motion_us || now - s_presence.last_motion_us >= ms_to_us(GREET_GAP_MS);
     ESP_LOGI(TAG, "someone arrived%s", greeting ? "" : " (seen recently: no greeting)");
+    portENTER_CRITICAL(&s_lock);
     s_presence.present = true;
+    portEXIT_CRITICAL(&s_lock);
     muse_state_set_asleep(false);   /* the input task resumes a paused display within a poll */
-    fade(0, LEVEL_FULL, FADE_IN_MS);
+    if (!s_presence.lit) {
+        fade(0, LEVEL_FULL, FADE_IN_MS);
+    }
     if (greeting && muse_state_mode(NULL) == MUSE_MODE_IDLE) {
         greet();
     }
@@ -190,24 +317,30 @@ static void arrive(int64_t now)
 static void leave(void)
 {
     ESP_LOGI(TAG, "nobody around");
+    portENTER_CRITICAL(&s_lock);
     s_presence.present = false;
+    portEXIT_CRITICAL(&s_lock);
 }
 
 static void presence_task(void *arg)
 {
     (void)arg;
     wait_for_muse();
-    s_presence.module = open_module();
-    if (!s_presence.module) {
+    mosaico_interact_handle_t module = open_module();
+    if (!module) {
         vTaskDeleteWithCaps(NULL);
         return;
     }
     mosaico_interact_inputs_t inputs;
     /* Someone there at start-up saw the boot: no welcome. */
-    if (mosaico_interact_read_inputs(s_presence.module, &inputs) == ESP_OK && inputs.motion_detected) {
+    bool seen = mosaico_interact_read_inputs(module, &inputs) == ESP_OK && inputs.motion_detected;
+    portENTER_CRITICAL(&s_lock);
+    s_presence.module = module;
+    if (seen) {
         s_presence.present = true;
         s_presence.last_motion_us = esp_timer_get_time();
     }
+    portEXIT_CRITICAL(&s_lock);
     ESP_LOGI(TAG, "watching for people");
     for (;;) {
         presence_clock_poll();
@@ -219,20 +352,33 @@ static void presence_task(void *arg)
                 } else {
                     arrive(now);
                 }
-                s_presence.last_motion_us = now;
             } else if (s_presence.present && now - s_presence.last_motion_us >= ms_to_us(LEAVE_AFTER_MS)) {
                 leave();
             }
+            portENTER_CRITICAL(&s_lock);
+            if (inputs.motion_detected) {
+                s_presence.last_motion_us = now;
+            }
+            s_presence.light = inputs.light_level;
+            portEXIT_CRITICAL(&s_lock);
         }
         if (s_presence.welcome_until_us && esp_timer_get_time() >= s_presence.welcome_until_us) {
             end_welcome();
         }
+        serve_request();
+        end_lit(esp_timer_get_time());
         vTaskDelay(pdMS_TO_TICKS(POLL_MS));
     }
 }
 
 esp_err_t mosaico_presence_start(void)
 {
+    s_presence.light = -1;
+    s_request_lock = xSemaphoreCreateMutex();
+    s_request_done = xSemaphoreCreateBinary();
+    if (!s_request_lock || !s_request_done) {
+        return ESP_ERR_NO_MEM;
+    }
     /* Stack in PSRAM: the task never writes flash, so it never runs with the
      * cache off, and it hands the drivers no buffers on its stack. */
     if (xTaskCreateWithCaps(presence_task, "presence", TASK_STACK, NULL, TASK_PRIORITY, NULL,
