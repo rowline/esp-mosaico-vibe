@@ -1,0 +1,33 @@
+menu "Muse voice (ESP-Mosaico)"
+
+    config MOSAICO_TTS_URL
+        string "Speech server URL"
+        default ""
+        help
+            An OpenAI-style /v1/audio/speech endpoint on the LAN that streams
+            16-bit mono PCM (response_format "pcm", rate in the
+            x-audio-sample-rate header), such as a computer's Qwen3-TTS
+            service: http://<address>:<port>/v1/audio/speech. The board asks
+            for "sample_rate": 16000 and "pace": 1.5 (a second ahead, then
+            1.5 times speech), which a server may ignore at the cost of
+            Wi-Fi memory. It says every
+            reply, Chinese or English; when it can't be reached, Chinese is
+            said by esp-sr on the board. Empty: esp-sr only. It names a
+            machine on one network, so set it in sdkconfig.local.
+
+    config MOSAICO_TTS_VOICE
+        string "Speech server voice"
+        default "vivian"
+        help
+            The server's voice name, as its /health lists them.
+
+    config MOSAICO_TTS_BENCH
+        bool "Bench RPCs over ESP-Iris (debugging)"
+        default n
+        help
+            ESP-Iris RPC service 29524 (tts_bench.c): 1 fetches speech from
+            the server (and plays it), 2 hammers PSRAM data from both cores,
+            3 reads both cores' PMP registers. Used to reproduce and pin down
+            the PSRAM crashes of 2026-10-04/05.
+
+endmenu

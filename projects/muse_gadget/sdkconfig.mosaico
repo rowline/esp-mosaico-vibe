@@ -26,7 +26,9 @@ CONFIG_ESP_IRIS_SERVICE_CONTEXT_PSRAM=y
 CONFIG_ESP_IRIS_SERVICE_STATE_PSRAM=y
 CONFIG_ESP_IRIS_RPC_RESPONSE_PSRAM=y
 CONFIG_ESP_IRIS_WIRE_BUFFERS_PSRAM=y
-CONFIG_ESP_IRIS_LOG_RING_BYTES=4096
+# The largest ring: boot logs outlast a smaller one before the host reconnects,
+# and it keeps more context in Core Dumps (2026-10-05, chasing crashes).
+CONFIG_ESP_IRIS_LOG_RING_BYTES=16384
 CONFIG_ESP_IRIS_LOG_RING_STORAGE_PSRAM=y
 CONFIG_ESP_IRIS_MEDIA_BUFFER_PSRAM=y
 CONFIG_TINYUSB_CDC_RX_BUFSIZE=1024
@@ -61,6 +63,15 @@ CONFIG_MUSE_CONSOLE_UART=y
 # Interaction module in either slot (components/mosaico_presence): someone
 # walking up lights its LEDs, wakes the screen and gets greeted by name.
 CONFIG_MOSAICO_PRESENCE_NAME="Rollin"
+
+# Code and constants run from flash, not from a PSRAM copy (the template's
+# XIP from PSRAM). With the copy, loads from valid PSRAM data within 47 KB past
+# the PMP boundary where the copied .rodata (read-only) meets data (read-write)
+# faulted now and then: five crashes on 2026-10-04/05, one every few minutes
+# under load. Without it, 25 minutes of the same load and real replies ran
+# clean (STATE.md). Memory protection stays on. ESP-Iris's PSRAM placements
+# above depend on XIP and are dropped; internal RAM free stays about 64 KB.
+# CONFIG_SPIRAM_XIP_FROM_PSRAM is not set
 
 # Muse on Vibe Mode: Vibe Mode writes and accepts images, so Muse's own OTA
 # and its 5-minute rollback guard stay off.

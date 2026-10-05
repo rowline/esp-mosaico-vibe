@@ -1,11 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 /*
- * Muse's voice on ESP-Mosaico (muse_tts.h): esp-sr's offline Chinese TTS with
- * its Xiaole voice, mapped from the voice_data partition that System Update
+ * Muse's voice on ESP-Mosaico (muse_tts.h). With CONFIG_MOSAICO_TTS_URL set,
+ * a speech server on the LAN says every reply, Chinese or English
+ * (tts_remote.c); only links, markup and emoji are taken out first. When it
+ * can't be reached, or for no URL, Chinese is said on the board by esp-sr's
+ * offline TTS and its Xiaole voice, and English is shown, not said.
+ *
+ * esp-sr's voice is mapped from the voice_data partition that System Update
  * writes. Mapping changes the flash MMU, which freezes the caches, so it is
  * done at boot: Muse's chat session, which says the replies, has its stack in
  * PSRAM, and a frozen cache asserts on that. The voice itself loads with the
- * first reply.
+ * first reply it says.
  *
  * esp-sr says Chinese only: hanzi, digits and Chinese punctuation. Muse writes
  * markdown, emoji, links and the odd English word, so a reply is first cut
@@ -27,6 +32,8 @@
 #include "esp_tts.h"
 #include "esp_tts_voice_template.h"
 #include "muse_text.h"
+#include "sdkconfig.h"
+#include "tts_remote.h"
 
 static const char *TAG = "tts";
 
@@ -41,6 +48,8 @@ static bool s_failed;
 EXT_RAM_BSS_ATTR static char s_text[SAY_MAX];   /* PSRAM: internal RAM is for Wi-Fi and TLS */
 static const char *s_next;      /* the rest of s_text */
 EXT_RAM_BSS_ATTR static char s_sentence[SENTENCE_MAX * 3 + 4];
+EXT_RAM_BSS_ATTR static char s_message[1024];   /* as Muse wrote it, for esp-sr after the server fails */
+static tts_remote_t *s_remote;  /* the server's speech for this message, or NULL: esp-sr's */
 static const short *s_pcm;      /* esp-sr's, until the next esp_tts_stream_play() */
 static int s_pcm_left;
 static int64_t s_synth_us;
@@ -49,6 +58,9 @@ static uint32_t s_samples;
 /* On the chat session's task: reads the mapped voice, touches no flash. */
 static bool init(void)
 {
+    if (!s_voice_data) {
+        return false;
+    }
     if (s_tts || s_failed) {
         return s_tts != NULL;
     }
@@ -252,6 +264,59 @@ static void speakable(const char *in, out_t *o)
     }
 }
 
+static bool is_link(const char *p)
+{
+    return starts(p, "http://") || starts(p, "https://") || starts(p, "www.");
+}
+
+/* in, for the server's voice, which reads Chinese and English: links,
+ * markdown, list bullets and emoji go. */
+static void readable(const char *in, out_t *o)
+{
+    const char *p = in;
+    bool line_start = true;
+    while (*p) {
+        bool bracketed = *p == '(' && is_link(p + 1);
+        if (bracketed || is_link(p)) {
+            p += bracketed;   /* a markdown link's target, brackets and all */
+            while (*p && *p != ' ' && *p != '\n' && *p != ')' && !(*p & 0x80)) {
+                p++;
+            }
+            p += bracketed && *p == ')';
+            continue;
+        }
+        unsigned char c = (unsigned char)*p;
+        if (c == '\n') {
+            if (o->len && o->buf[o->len - 1] != '\n') {
+                put(o, "\n", 1);
+            }
+            line_start = true;
+            p++;
+            continue;
+        }
+        if (line_start && (c == ' ' || ((c == '-' || c == '+') && p[1] == ' '))) {
+            p++;   /* indents and list bullets */
+            continue;
+        }
+        if (strchr("*#`>|~_[]", c) || (c == '(' && p[1] == ')')) {
+            p += c == '(' ? 2 : 1;   /* markup, and the brackets a link left */
+            continue;
+        }
+        line_start = false;
+        if (c < 0x80) {
+            put(o, p++, 1);
+            continue;
+        }
+        size_t len;
+        char stand_in[4];
+        o->hanzi += hanzi(muse_text_decode(p, &len));
+        if (muse_text_ascii(p, &len, stand_in) != 0) {
+            put(o, p, len);   /* emoji have no stand-in: they go */
+        }
+        p += len;
+    }
+}
+
 /* ---- Saying it ---- */
 
 /* The next sentence of s_text into s_sentence: up to a full stop, or a comma
@@ -298,7 +363,7 @@ static bool next_sentence(void)
     return false;
 }
 
-static bool tts_begin(const char *text)
+static bool local_begin(const char *text)
 {
     if (!init()) {
         return false;
@@ -317,7 +382,7 @@ static bool tts_begin(const char *text)
     return true;
 }
 
-static size_t tts_read(int16_t *pcm, size_t cap)
+static size_t local_read(int16_t *pcm, size_t cap)
 {
     while (!s_pcm_left) {
         int64_t t0 = esp_timer_get_time();
@@ -342,7 +407,7 @@ static size_t tts_read(int16_t *pcm, size_t cap)
     return n;
 }
 
-static void tts_end(void)
+static void local_end(void)
 {
     if (!s_tts) {
         return;
@@ -356,8 +421,54 @@ static void tts_end(void)
     }
 }
 
-static const muse_tts_t s_voice = {
-    .name = "esp-sr Xiaole",
+static bool tts_begin(const char *text)
+{
+    strlcpy(s_message, text, sizeof(s_message));
+    if (CONFIG_MOSAICO_TTS_URL[0]) {
+        out_t o = { .buf = s_text, .cap = sizeof(s_text) };
+        s_text[0] = '\0';
+        readable(text, &o);
+        if (o.len) {
+            s_remote = tts_remote_start(s_text, o.hanzi ? "chinese" : "english");
+            if (s_remote) {
+                return true;
+            }
+        }
+    }
+    return local_begin(text);
+}
+
+static size_t tts_read(int16_t *pcm, size_t cap)
+{
+    if (!s_remote) {
+        return local_read(pcm, cap);
+    }
+    int n = tts_remote_read(s_remote, pcm, cap);
+    if (n > 0) {
+        return (size_t)n;
+    }
+    if (n == TTS_REMOTE_LATER) {
+        return MUSE_TTS_LATER;
+    }
+    if (n == TTS_REMOTE_FAILED && !tts_remote_said(s_remote)) {
+        /* The server isn't there: Chinese is said here instead. */
+        tts_remote_stop(s_remote);
+        s_remote = NULL;
+        return local_begin(s_message) ? local_read(pcm, cap) : 0;
+    }
+    return 0;
+}
+
+static void tts_end(void)
+{
+    if (s_remote) {
+        tts_remote_stop(s_remote);
+        s_remote = NULL;
+    }
+    local_end();
+}
+
+static muse_tts_t s_voice = {
     .begin = tts_begin,
     .read = tts_read,
     .end = tts_end,
@@ -367,20 +478,27 @@ const muse_tts_t *tts_mosaico_start(void)
 {
     const esp_partition_t *part =
         esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_ANY, "voice_data");
-    if (!part) {
-        ESP_LOGW(TAG, "no voice_data partition: replies stay unspoken (install with system-update)");
-        return NULL;
-    }
     esp_partition_mmap_handle_t map;
-    esp_err_t err = esp_partition_mmap(part, 0, part->size, ESP_PARTITION_MMAP_DATA, &s_voice_data, &map);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "mapping voice_data: %s", esp_err_to_name(err));
-        return NULL;
-    }
-    if (*(const uint32_t *)s_voice_data == 0xFFFFFFFF) {
-        ESP_LOGW(TAG, "voice_data is empty: replies stay unspoken (install with system-update)");
+    if (!part) {
+        ESP_LOGW(TAG, "no voice_data partition (install with system-update)");
+    } else if (esp_partition_mmap(part, 0, part->size, ESP_PARTITION_MMAP_DATA, &s_voice_data, &map) != ESP_OK) {
+        ESP_LOGE(TAG, "voice_data didn't map");
+        s_voice_data = NULL;
+    } else if (*(const uint32_t *)s_voice_data == 0xFFFFFFFF) {
+        ESP_LOGW(TAG, "voice_data is empty (install with system-update)");
         esp_partition_munmap(map);
+        s_voice_data = NULL;
+    }
+    if (s_voice_data) {
+        ESP_LOGI(TAG, "voice_data mapped at %p, %u KB", s_voice_data, (unsigned)(part->size / 1024));
+    }
+    bool server = CONFIG_MOSAICO_TTS_URL[0] != '\0';
+    if (!server && !s_voice_data) {
+        ESP_LOGW(TAG, "no voice: replies are shown, not said");
         return NULL;
     }
+    s_voice.name = server ? (s_voice_data ? "the speech server (esp-sr when it's away)" : "the speech server")
+                          : "esp-sr Xiaole";
+    ESP_LOGI(TAG, "replies said by %s", s_voice.name);
     return &s_voice;
 }

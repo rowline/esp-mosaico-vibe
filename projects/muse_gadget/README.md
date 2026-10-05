@@ -60,14 +60,26 @@ simulator, build it with `-DMUSE_SIM_BOARD=esp_mosaico` and run it with
 
 ## Voice
 
-With the speaker on, replies are said by esp-sr's offline Chinese TTS
-(`components/mosaico_tts`, Xiaole voice) and the captions follow the speech;
-with it off, they're shown at reading pace as upstream. The 2.9 MB voice sits
-in its own `voice_data` partition, which System Update writes from esp-sr's
-`esp_tts_voice_data_xiaole.dat`; app-update leaves it in place. esp-sr reads
-Chinese only, so markdown, emoji and links are dropped, acronyms are spelled
-the Chinese way ("AI" as 诶艾) and other English words are skipped; a reply
-with no Chinese in it is shown, not said.
+With the speaker on, replies are said aloud and the captions follow the
+speech; with it off, they're shown at reading pace as upstream. The voices,
+in `components/mosaico_tts`:
+
+- A speech server on the LAN, when `CONFIG_MOSAICO_TTS_URL` names one (in
+  `sdkconfig.local`): an OpenAI-style `/v1/audio/speech` that streams 16-bit
+  PCM, such as a computer's Qwen3-TTS. It says Chinese and English alike. The
+  board asks for 16 kHz, paced at 1.5 times speech after the first second:
+  streamed as fast as it was synthesized, speech held Wi-Fi's receive buffers
+  in internal DMA RAM until the board crashed.
+- esp-sr's offline Chinese TTS (Xiaole voice), when the server can't be
+  reached or isn't set. Its 2.9 MB voice sits in its own `voice_data`
+  partition, which System Update writes from esp-sr's
+  `esp_tts_voice_data_xiaole.dat`; app-update leaves it in place. It reads
+  Chinese only: acronyms are spelled the Chinese way ("AI" as 诶艾), other
+  English words are skipped, and a reply with no Chinese in it is shown, not
+  said.
+
+Links, markdown and emoji are taken out before either voice reads a reply,
+and the captions leave markdown out too.
 
 ## Camera
 

@@ -4,9 +4,10 @@
 #include "muse_tts.h"
 
 /*
- * esp-sr's Chinese voice, for muse_tts_register(), or NULL with no voice data
- * installed. Maps the voice_data partition, a flash MMU change that freezes
+ * Muse's voice, for muse_tts_register(): the speech server in
+ * CONFIG_MOSAICO_TTS_URL, with esp-sr's Chinese voice when it's away; NULL
+ * with neither. Maps the voice_data partition, a flash MMU change that freezes
  * the caches: call it from a task with its stack in internal RAM, as
- * muse_gadget_platform_start() runs. The voice loads on first use.
+ * muse_gadget_platform_start() runs. esp-sr's voice loads on first use.
  */
 const muse_tts_t *tts_mosaico_start(void);

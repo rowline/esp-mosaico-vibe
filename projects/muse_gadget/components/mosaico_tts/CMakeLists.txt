@@ -1,9 +1,10 @@
-# Muse's voice (muse_tts.h) from esp-sr's offline Chinese TTS.
+# Muse's voice (muse_tts.h): a speech server on the LAN, and esp-sr's offline
+# Chinese TTS on the board.
 idf_component_register(
-    SRCS "tts_mosaico.c"
+    SRCS "tts_mosaico.c" "tts_remote.c" "tts_bench.c"
     INCLUDE_DIRS "."
     REQUIRES muse
-    PRIV_REQUIRES esp_partition esp_timer)
+    PRIV_REQUIRES esp_http_client esp_iris esp_mm esp_partition esp_timer freertos)
 
 # ESP-DL, which esp-sr requires, trips GCC 16's stricter C++ linkage
 # diagnostic in code TTS doesn't use (the BSP's voice_tts example downgrades it).

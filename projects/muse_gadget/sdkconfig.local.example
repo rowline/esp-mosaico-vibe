@@ -6,3 +6,8 @@
 # Use a DNS server outside the LAN so lookups also pass through that host.
 CONFIG_HOMEHUB_UPLINK_GATEWAY="192.168.1.10"
 CONFIG_HOMEHUB_UPLINK_DNS="223.5.5.5"
+#
+# Say replies with a speech server on the LAN, Chinese and English alike
+# (components/mosaico_tts). Without it, esp-sr on the board says Chinese only.
+CONFIG_MOSAICO_TTS_URL="http://192.168.1.10:8010/v1/audio/speech"
+CONFIG_MOSAICO_TTS_VOICE="vivian"

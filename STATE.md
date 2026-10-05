@@ -2,6 +2,88 @@
 
 按日期倒序。拍板与推翻只追加，不改写。
 
+## 2026-10-05 下午 muse_gadget：PSRAM 崩溃的解法是不从 PSRAM 执行代码；字幕去 Markdown
+
+拍板（Rollin）：不退回只用板上 esp-sr 的稳定版，就在 Mac 语音方案上把问题解决。关 PMP 内存保护的实验被权限拦下，没有做，也不再追。
+
+推翻：
+
+- 关掉 `CONFIG_SPIRAM_XIP_FROM_PSRAM`（写在 `sdkconfig.mosaico`），代码和常量改在 flash 里执行，PSRAM 只放数据，那条只读/可读写的 PMP 分界就不存在了。PMP 内存保护照常开着。
+  - 对照：原配置下，锤子测试加边下载边播放，4 分钟左右崩一次；关掉后同样的测试跑 10 分钟零崩溃，两核各锤约 580 万轮、0 个错字。随后又跑了 15 分钟锤子测试，Rollin 同时用中英文对话，有语音、没崩。
+  - 副作用：ESP-Iris 的三项「放 PSRAM」配置依赖 XIP，跟着失效，Iris 的缓冲落回片内 RAM。开机后片内空闲 64.5 KB，和之前持平。PSRAM 空闲多出约 4 MB。
+
+改动：
+
+- 字幕分页（`muse_chat_text.c`）不显示 Markdown：行首的 `#`、`- * +` 列表号、`>` 去掉，行内的 `**`、`` ` ``、`__`、`~~` 去掉，`[文字](链接)` 只留文字。这些符号不占宽度，换行按去掉后的样子算。新增一条测试，host 测试共 157 项通过。
+- 13:3x 从 Vibe Mode 装上（app-update），还要请 Rollin 看字幕效果。
+
+悬着的事：
+
+- USB 链路卡死又出现了一次（约 13:07，开机 21 分钟后，当时在跑锤子测试）。这次拔插后 Mac 上连 USB 设备都没有，Rollin 按住 AI 键开机进了 Vibe Mode 才装上新固件。断连的原因还没查到：板子里留存的日志在拔插之前就被覆盖了。现在后台在长时间抓日志，等下次出现。
+- 都还没提交：XIP 配置、字幕去 Markdown、远程 TTS、测试入口（`tts_bench.c` 是调试代码，要拿掉或者改成用开关控制）。
+
+## 2026-10-05 muse_gadget：英文用 Mac 的 Qwen3-TTS；PSRAM 访问错崩溃（未解决）
+
+拍板（Rollin）：
+
+- 回复不分中英文，都先交给 Mac 的 Qwen3-TTS 读（`~/tts-service`，`CONFIG_MOSAICO_TTS_URL` 写在 `sdkconfig.local`）；Mac 连不上时，中文退回板上的 esp-sr。
+- 选择「保持现状，接着查」：板上现在跑的是带 Mac 语音和测试入口的版本，对话中随时可能崩。
+
+Mac 这边（`~/tts-service`，改前备份为 `*.bak-20261004`、`*.bak-20261005`）：
+
+- 监听 `0.0.0.0:8010`，只放行本机和板子（`TTS_ALLOW` 写在 `run.sh`，填本机和板子的内网地址），其余返回 403。HomeAgent 等本机调用不受影响。
+- 新增三个可选请求字段：`language`、`sample_rate`、`pace`。`pace` 的意思是先发 1 秒，之后不超过实时的 pace 倍。板子请求 16 kHz、`pace` 1.5。
+- Mac 防火墙开着隐身模式，Homebrew Python 3.11 不在放行名单里。不过板子实际连上了（Mac 端日志有板子地址发来的请求），说明没被挡。
+
+试过不行的路：
+
+- 下载缓冲只开 1 秒，读不完的语音流堆在 lwIP 里，占住 Wi-Fi 接收缓冲，片内 DMA 内存被吃到 1 KB 以下，板子崩溃。改成整条消息存进 PSRAM 缓冲，再加上服务端限速后，这个问题消失。
+- 打开 `CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP` 反而更糟：Wi-Fi 接收缓冲在这颗芯片上进不了 PSRAM，还多出一批常驻的发送缓冲，DMA 最低值从约 6 KB 降到约 2 KB。已撤回。
+- 加过 MMU 映射监测：每 10 ms 查一遍 256 个 PSRAM 页，没抓到任何改动。之后板子空闲时崩了一次，怀疑监测本身也是诱因，已删掉。
+
+已确认的事实（5 份 core dump）：
+
+- 全部是 Load access fault（mcause=5）。故障地址都是合法的 PSRAM 数据：0x5039cb18、0x5039cc54、0x5039cd1c（ESP-Iris 的服务状态，堆分配）、0x503a0c80（Muse 的 `s_turn`）、0x503a7b94（lwIP socket 表）。
+- 这些地址全部落在 PSRAM 中 `.rodata` 拷贝末尾那条 PMP 分界之后约 46 KB 以内。分界在 `_rodata_reserved_end`（0x5039c380），从这里起由只读变为可读写。分界之后先是页对齐空隙（被回收给堆用），再往后是 `.ext_ram.bss`（从 0x503a0000 开始）。
+- 用测试入口读了两个核的 PMP 寄存器，两边完全一样，都是对的：0x5039c380–0x50febd00 可读写。PSRAM 没开 ECC。
+- 可复现：同时跑锤子测试（RPC 29524/2）和「边下载边播放」测试（RPC 29524/1，负载 p5），4 分钟左右崩一次。空闲时也崩过一次。
+
+悬着的事：
+
+- 想做的对照实验是关掉 PMP 内存保护（`CONFIG_ESP_SYSTEM_MEMPROT=n`），看还崩不崩。这一步被权限拦下了（会削弱安全保护），要 Rollin 决定做不做。
+- 根因大概率在 ESP32-S31 加 ESP-IDF 主干（7b9cc1ac）这一层。8 月 19 日的 01b86f1269 刚改过 S31 的 PSRAM 分区保护。可以拿上面的证据去给乐鑫提 issue。
+- 测试入口（`tts_bench.c`，ESP-Iris RPC 服务号 29524，方法 1 拉语音、2 锤子测试、3 读 PMP）是调试代码，查完要拿掉，或者改成用开关控制。
+- 取日志不要依赖 `mosaico.py iris logs` 的终端输出：它会中途停止打印，实际上日志还在收。完整记录在 `.codex-runs/mosaico/*-monitor/raw.log` 里，每行一条 JSON。
+- 都还没提交：两个仓库里有我的远程 TTS 和测试入口改动，也有另一个会话的 voice.say 改动，提交时要按文件分开。
+
+## 2026-10-04 深夜 muse_gadget：把板子能力注册给 Muse（voice.say 等 7 条命令）
+
+背景：Rollin 问 Muse「你能用 gadget 说话吗」，Muse 答「没有扬声器播放的指令」。Muse 和板子之间是 Meta 的 Home Link 协议（`link.register` 带 `commands_v2` 清单，Muse 下发 `link.invoke`），不是 MCP；清单里原来只有 health、discover、draw_url、show_animation、camera.capture。
+
+拍板（Rollin）：加 `voice.say`，并把板子其它能力都暴露给 Muse。
+
+改动：
+
+- SDK（`esp-mosaico` 分支）：`main/gadget_platform.h` 新增两个弱钩子 `muse_gadget_platform_add_commands()` / `muse_gadget_platform_command()`；`noise_control` 公开 `noise_ctrl_add_command()`；`muse_glue.c` 注册并处理 `voice.say`、`voice.configure`、`display.show_text`、`display.configure`；`muse_voice.c` 新增 `muse_voice_say()`，在语音任务空闲时合成播放、字幕按页跟随，按 AI 键打断转为录音。
+- 工程：`mosaico_platform/mosaico_commands.c` 注册 `presence.read`、`lights.set`、`ir.send_nec`，并在 `voice.say` 描述里补上语言说明；`mosaico_presence` 加状态查询和灯/红外请求（由 presence 任务代为执行，200 ms 内响应）。
+- 注册 JSON 的打印缓冲上限从 8 KB 提到 12 KB。
+
+已验证：
+
+- 固件编译通过（0 编译警告；「1/2 app partitions too small」是原有分区提示）。
+- SDK host 测试 156 项通过（`test_link_ota` 的注册测试加了钩子桩）。
+
+- 23:21 app-update 装上：同一 Device ID 4553502d49524953010030eda0f46f0a，新 Boot ID 9810234534496346233，正常模式，0 次崩溃，空闲内部内存 58.6 KB。新一次开机的 `link.register` 从 1931 字节变成 5486 字节，Muse 服务端回 200 并 ack。
+
+未验证：
+
+- Muse 实际调用 `voice.say` 等新命令：要在 Muse 里让它「用 gadget 说一句话」，看设备日志里有没有 `invoke request: command=voice.say` 和 `muse_voice: saying ...`。灯、红外、presence.read 同理。
+
+悬着的事：
+
+- `muse_voice.c` 用到的 `MUSE_TTS_LATER` 来自另一个会话尚未提交的 `muse_tts.h` 改动（远程 TTS），两边要一起提交；本会话没有提交任何东西。
+- 两个仓库里还有另一个会话的未提交改动（`mosaico_tts/tts_remote.*`、`tts_bench.*`、`muse_chat_session.cpp`），提交时按文件分开。
+
 ## 2026-10-04 夜 muse_gadget：语速调快、USB 链路卡死
 
 拍板（Rollin）：

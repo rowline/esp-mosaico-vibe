@@ -6,6 +6,7 @@
 #include "esp_log.h"
 #include "iris_ota_support.h"
 #include "muse_tts.h"
+#include "tts_bench.h"
 #include "tts_mosaico.h"
 #include "mosaico_presence.h"
 
@@ -25,6 +26,7 @@ void muse_gadget_platform_start(void)
     /* esp-sr's voice for replies: mapped here, on the main task's internal
      * stack; it loads with the first reply it says. */
     muse_tts_register(tts_mosaico_start());
+    tts_bench_register();
     /* Waits for Muse's UI and an Interaction module in its own task. */
     ESP_ERROR_CHECK_WITHOUT_ABORT(mosaico_presence_start());
 }
